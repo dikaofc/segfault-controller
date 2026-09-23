@@ -220,6 +220,7 @@ $('sin').addEventListener('keydown',e=>{if(e.key==='Enter')sgo();});
 term.writeln('\x1b[1;36msegfault VPS — terminal\x1b[0m');
 term.writeln('\x1b[2mIsi CONTROLLER_TOKEN lalu Connect. Tiap Enter = 1 request SSH (bukan shell permanen). cd persisten, ↑↓ riwayat, Ctrl+C batalkan.\x1b[0m');
 newline();
+if(tokEl.value.trim())connect();
 </script>
 </body>
 </html>

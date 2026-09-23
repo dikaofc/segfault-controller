@@ -1,0 +1,98 @@
+name: segfault-keepalive
+
+# Menahan sesi SSH ke instance segfault selama mungkin dalam batas 6 jam job
+# GitHub, lalu diulang. Sesi terbuka = "logged in" menurut segfault, jadi
+# instance tidak kena auto-shutdown idle 36 jam.
+#
+# Secret yang dibutuhkan (Settings -> Secrets and variables -> Actions):
+#   SF_HOST    contoh: lsd.segfault.net
+#   SF_SECRET  nilai $SF_SEC dari instance kamu
+#
+# Catatan: workflow terjadwal dinonaktifkan GitHub setelah 60 hari tanpa
+# aktivitas repo. Setel pengingat untuk menyentuh repo ini.
+
+on:
+  schedule:
+    - cron: '0 */5 * * *'   # tiap 5 jam
+  workflow_dispatch:         # tombol "Run workflow" untuk uji manual
+
+# Jangan biarkan dua run tumpang tindih dan berebut instance.
+concurrency:
+  group: segfault-keepalive
+  cancel-in-progress: false
+
+jobs:
+  hold-session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350      # ~5 jam 50 menit, di bawah batas 6 jam GitHub
+
+    steps:
+      - name: Validasi secret
+        run: |
+          if [ -z "${{ secrets.SF_HOST }}" ] || [ -z "${{ secrets.SF_SECRET }}" ]; then
+            echo "::error::SF_HOST / SF_SECRET belum diisi di repository secrets."
+            exit 1
+          fi
+          echo "[ok] secret terbaca (host: ${{ secrets.SF_HOST }})"
+
+      - name: Siapkan sshpass
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+
+      - name: Tahan sesi SSH
+        env:
+          SF_HOST: ${{ secrets.SF_HOST }}
+          SF_SECRET: ${{ secrets.SF_SECRET }}
+        run: |
+          # Password SSH segfault selalu literal 'segfault'; yang menentukan
+          # instance mana yang kamu dapat adalah SECRET.
+          # Tanpa SetEnv SECRET, login akan MEMBUAT SERVER BARU yang kosong.
+          SSH_OPTS=(
+            -o "SetEnv SECRET=${SF_SECRET}"
+            -o StrictHostKeyChecking=accept-new
+            -o ConnectTimeout=30
+            -o ServerAliveInterval=60
+            -o ServerAliveCountMax=3
+            -o LogLevel=ERROR
+          )
+
+          echo "[..] login ke ${SF_HOST}"
+          # HOLD_SECONDS sedikit di bawah timeout-minutes supaya job selesai
+          # dengan rapi, tidak dibunuh paksa.
+          HOLD_SECONDS=20400   # 5 jam 40 menit
+
+          # Payload: tandai aktivitas, pastikan anchor tmux hidup, lalu tahan
+          # sesi selama HOLD_SECONDS. Selama shell ini hidup, syarat
+          # "no shell running" pada aturan idle-shutdown tidak terpenuhi.
+          PAYLOAD=$(cat <<'EOS'
+          set -u
+          mkdir -p /sec
+          date -Is >> /sec/.keepalive
+          echo "[ok] login sukses — LID=${SF_LID:-?} host=${SF_FQDN:-?}"
+          if command -v tmux >/dev/null 2>&1; then
+              tmux has-session -t keep 2>/dev/null || \
+                  tmux new-session -d -s keep 'while :; do sleep 3600; done'
+              echo "[ok] anchor tmux: $(tmux ls 2>/dev/null | tr '\n' ' ')"
+          fi
+          curl -s -m 3 -o /dev/null http://127.0.0.1:20128/v1/models \
+              && echo "[ok] 9Router hidup" || echo "[--] 9Router belum siap"
+          echo "[ok] sesi ditahan (payload)"
+          EOS
+          )
+
+          set +e
+          sshpass -p segfault ssh \
+            -o PreferredAuthentications=password -o PubkeyAuthentication=no \
+            "${SSH_OPTS[@]}" "root@${SF_HOST}" \
+            "bash -lc '$PAYLOAD'; sleep ${HOLD_SECONDS}"
+          rc=$?
+          set -e
+
+          if [ "$rc" -eq 0 ] || [ "$rc" -eq 255 ]; then
+            # 255 = koneksi putus di tengah jalan; run berikutnya menyambung lagi.
+            echo "[ok] sesi diakhiri (rc=$rc) — run berikutnya melanjutkan"
+          else
+            echo "::error::ssh gagal dengan rc=$rc"
+            exit "$rc"
+          fi

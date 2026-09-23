@@ -6,7 +6,7 @@
 <title>lsd.segfault.net — console</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
 <style>
-:root{--bg:#0a0a0a;--bar:#101010;--line:#262626;--txt:#d7d7d7;--dim:#7a7a7a;--acc:#4cc38a;--warn:#e5c07b;--err:#e06c75}
+:root{--bg:#0a0a0a;--bar:#101010;--line:#262626;--txt:#d7d7d7;--dim:#7a7a7a;--acc:#4cc38a;--err:#e06c75}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--txt);font:14px/1.45 "JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;display:flex;flex-direction:column;height:100dvh}
@@ -23,27 +23,34 @@ body{background:var(--bg);color:var(--txt);font:14px/1.45 "JetBrains Mono",ui-mo
 .btn:hover{border-color:var(--acc);color:var(--acc)}
 .btn.primary{border-color:var(--acc);color:var(--acc)}
 .btn:disabled{opacity:.4;cursor:default}
-.menu{display:flex;gap:0;background:var(--bar);border-bottom:1px solid var(--line);overflow-x:auto;flex:none;scrollbar-width:none}
+.menu{display:flex;background:var(--bar);border-bottom:1px solid var(--line);overflow-x:auto;flex:none;scrollbar-width:none}
 .menu::-webkit-scrollbar{display:none}
 .menu button{background:transparent;border:0;border-right:1px solid var(--line);color:var(--dim);font:inherit;font-size:12px;padding:9px 14px;cursor:pointer;white-space:nowrap;letter-spacing:.06em}
 .menu button:hover{color:var(--txt);background:#161616}
 .menu button b{color:var(--acc);font-weight:400;margin-right:6px}
+.tabs{display:flex;align-items:stretch;background:#0d0d0d;border-bottom:1px solid var(--line);overflow-x:auto;flex:none;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{background:transparent;border:0;border-right:1px solid var(--line);color:var(--dim);font:inherit;font-size:12px;padding:8px 8px 8px 14px;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:8px}
+.tab.on{color:var(--txt);background:#161616;box-shadow:inset 0 2px 0 var(--acc)}
+.tab .x{color:var(--dim);padding:0 4px}
+.tab .x:hover{color:var(--err)}
+.tab.new{color:var(--acc)}
 #wrap{flex:1;min-height:0;position:relative;background:#000}
-#term{position:absolute;inset:0;padding:8px}
+.pane{position:absolute;inset:0;padding:8px;display:none}
+.pane.on{display:block}
 #simple{display:none;flex-direction:column;position:absolute;inset:0;background:#000;padding:10px;gap:8px}
 #simple pre{flex:1;margin:0;overflow:auto;background:var(--bar);border:1px solid var(--line);padding:10px;white-space:pre-wrap;font-size:13px}
 #simple .row{display:flex;gap:8px}
 #simple input{flex:1;background:var(--bar);color:var(--txt);border:1px solid var(--line);padding:10px;font:inherit;min-width:0}
-.status{display:flex;gap:0;background:var(--bar);border-top:1px solid var(--line);font-size:12px;color:var(--dim);flex:none;overflow-x:auto;scrollbar-width:none}
+.status{display:flex;background:var(--bar);border-top:1px solid var(--line);font-size:12px;color:var(--dim);flex:none;overflow-x:auto;scrollbar-width:none}
 .status::-webkit-scrollbar{display:none}
 .status span{padding:6px 12px;border-right:1px solid var(--line);white-space:nowrap}
 .status b{color:var(--txt);font-weight:400}
 @media (max-width:640px){
   body{font-size:13px}
-  .top input{width:100%;flex:1 1 100%;order:5}
+  .top input{flex:1 1 100%;order:5;width:auto}
   .node span{display:none}
-  .menu button{padding:10px 12px}
-  #term{padding:4px}
+  .pane{padding:4px}
 }
 </style>
 </head>
@@ -65,14 +72,15 @@ body{background:var(--bg);color:var(--txt);font:14px/1.45 "JetBrains Mono",ui-mo
   <button onclick="snip('/sec/root/segfault/up.sh')"><b>06</b>RESTORE</button>
   <button onclick="ping()"><b>07</b>KEEPALIVE</button>
 </nav>
+<div class="tabs" id="tabbar"></div>
 <div id="wrap">
-  <div id="term"></div>
   <div id="simple">
-    <pre id="sout">simple mode — ketik perintah di bawah, Enter untuk jalan.</pre>
+    <pre id="sout">simple mode — jalan di tab aktif. ketik perintah di bawah.</pre>
     <div class="row"><input id="sin" placeholder="uptime" autocomplete="off" autocapitalize="off"><button class="btn primary" onclick="sgo()">RUN</button></div>
   </div>
 </div>
 <div class="status">
+  <span>tab <b id="stTab">1</b></span>
   <span>cwd <b id="stCwd">~</b></span>
   <span>exit <b id="stExit">-</b></span>
   <span>rtt <b id="stPing">-</b></span>
@@ -83,113 +91,182 @@ body{background:var(--bg);color:var(--txt);font:14px/1.45 "JetBrains Mono",ui-mo
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.7.0/lib/xterm-addon-fit.js"></script>
 <script>
 const $=id=>document.getElementById(id);
-const term=new Terminal({cursorBlink:true,fontSize:14,scrollback:2000,theme:{background:'#000000',foreground:'#d7d7d7',cursor:'#4cc38a',selectionBackground:'#2a2a2a',black:'#000000',red:'#e06c75',green:'#4cc38a',yellow:'#e5c07b',blue:'#61afef',magenta:'#c678dd',cyan:'#56b6c2',white:'#d7d7d7',brightBlack:'#5c5c5c'}});
-const fit=new FitAddon.FitAddon();
-term.loadAddon(fit);term.open($('term'));fit.fit();
-addEventListener('resize',()=>{try{fit.fit()}catch(_){}});
-let connected=false,busy=false,cwd='/sec/root',hist=[],hi=-1,buf='',aborter=null;
 const tokEl=$('token');
 tokEl.value=localStorage.getItem('sf_token')||'';
-const short=p=>p.replace(/^\/sec\/root/,'~');
-const P=()=>'\r\n\x1b[1;32mroot@lsd\x1b[0m:\x1b[1;34m'+short(cwd)+'\x1b[0m# ';
+const short=p=>String(p).replace(/^\/sec\/root/,'~');
 const msg=t=>$('stMsg').textContent=t;
-const nl=()=>{term.write(P());buf='';};
-function setConn(on){connected=on;$('dot').classList.toggle('on',on);$('btnConn').textContent=on?'CUT':'CONNECT';tokEl.disabled=on;}
+let connected=false,seq=0,tabs=[],active=null,simpleMode=false;
+
+function api(cmd,tab,timeout=55000){
+  const t0=Date.now();tab.aborter=new AbortController();
+  return fetch('/api/exec',{method:'POST',headers:{'Content-Type':'application/json'},signal:tab.aborter.signal,body:JSON.stringify({token:tokEl.value.trim(),command:cmd})})
+    .then(async res=>{
+      if(tab===active)$('stPing').textContent=((Date.now()-t0)/1000).toFixed(1)+'s';
+      if(res.status===401){tab.term.writeln('\r\ntoken salah');setConn(false);return null;}
+      const j=await res.json();
+      if(tab===active)$('stExit').textContent=j.code;
+      tab.exit=j.code;return j;
+    })
+    .catch(e=>{if(e&&e.name==='AbortError'){tab.term.writeln('^C');return null;}tab.term.writeln('\r\nnetwork error: '+(e&&e.message||e));return null;})
+    .finally(()=>{tab.aborter=null;});
+}
+const withCwd=(tab,c)=>'cd '+JSON.stringify(tab.cwd)+' && '+c;
+function show(tab,j){
+  if(!j)return;
+  if(j.stdout)tab.term.write('\r\n'+j.stdout.replace(/\n/g,'\r\n'));
+  if(j.stderr)tab.term.write('\r\n\x1b[31m'+j.stderr.replace(/\n/g,'\r\n')+'\x1b[0m');
+  if(!j.ok)tab.term.write('\r\n\x1b[31m[exit '+j.code+']\x1b[0m');
+}
+function drawBar(){
+  const bar=$('tabbar');bar.innerHTML='';
+  tabs.forEach((t,i)=>{
+    const b=document.createElement('button');
+    b.className='tab'+(t===active?' on':'');
+    const label=document.createElement('span');
+    label.textContent=(i+1)+':'+short(t.cwd)+(t.busy?' •':'');
+    label.onclick=()=>switchTab(t.id);
+    const x=document.createElement('span');
+    x.className='x';x.textContent='×';x.title='tutup';
+    x.onclick=e=>{e.stopPropagation();closeTab(t.id);};
+    b.appendChild(label);b.appendChild(x);bar.appendChild(b);
+  });
+  const n=document.createElement('button');
+  n.className='tab new';n.textContent='+ TAB';n.onclick=()=>newTab(true);
+  bar.appendChild(n);
+  $('stTab').textContent=String(tabs.indexOf(active)+1);
+  $('stCwd').textContent=active?short(active.cwd):'-';
+  $('stExit').textContent=active&&active.exit!=null?active.exit:'-';
+}
+function newTab(focus){
+  const id=++seq;
+  const el=document.createElement('div');
+  el.className='pane';el.id='pane'+id;$('wrap').appendChild(el);
+  const term=new Terminal({cursorBlink:true,fontSize:14,scrollback:2000,theme:{background:'#000000',foreground:'#d7d7d7',cursor:'#4cc38a',selectionBackground:'#2a2a2a'}});
+  const fit=new FitAddon.FitAddon();
+  term.loadAddon(fit);term.open(el);
+  const tab={id,el,term,fit,cwd:'/sec/root',hist:[],hi:-1,buf:'',busy:false,aborter:null,exit:null};
+  term.onData(d=>onKey(tab,d));
+  tabs.push(tab);
+  term.writeln('tab '+tabs.length+' — enter untuk eksekusi di vps.');
+  if(!connected)term.writeln('belum connect: isi token di atas lalu CONNECT.');
+  prompt(tab);
+  if(focus!==false)switchTab(id);else drawBar();
+  return tab;
+}
+function switchTab(id){
+  const t=tabs.find(x=>x.id===id);if(!t)return;
+  active=t;
+  tabs.forEach(x=>x.el.classList.toggle('on',x===t));
+  drawBar();
+  if(!simpleMode){try{t.fit.fit()}catch(_){}t.term.focus();}
+}
+function closeTab(id){
+  if(tabs.length<=1){msg('minimal 1 tab');return;}
+  const i=tabs.findIndex(x=>x.id===id);if(i<0)return;
+  const t=tabs[i];
+  if(t.busy&&t.aborter)t.aborter.abort();
+  try{t.term.dispose()}catch(_){}
+  t.el.remove();tabs.splice(i,1);
+  if(active===t)switchTab(tabs[Math.max(0,i-1)].id);else drawBar();
+}
+const P=tab=>'\r\n\x1b[1;32mroot@lsd\x1b[0m:\x1b[1;34m'+short(tab.cwd)+'\x1b[0m# ';
+function prompt(tab){tab.term.write(P(tab));tab.buf='';}
+function setConn(on){
+  connected=on;$('dot').classList.toggle('on',on);
+  $('btnConn').textContent=on?'CUT':'CONNECT';tokEl.disabled=on;
+}
 function toggleConn(){connected?cut():connect();}
-function cut(){if(busy&&aborter)aborter.abort();setConn(false);msg('cut — tiap enter = 1 ssh, bukan sesi permanen');term.writeln('\r\n-- disconnected --');}
+function cut(){
+  tabs.forEach(t=>{if(t.busy&&t.aborter)t.aborter.abort();t.busy=false;t.term.writeln('\r\n-- disconnected --');});
+  setConn(false);msg('cut');
+}
 async function connect(){
   const t=tokEl.value.trim();
   if(!t){msg('isi controller token dulu');tokEl.focus();return;}
   localStorage.setItem('sf_token',t);
   setConn(true);msg('connecting…');
-  const r=await api('uname -sr; uptime; df -h /sec | tail -1');
+  const tab=active;
+  const r=await api('uname -sr; uptime; df -h /sec | tail -1',tab);
   if(r===null){setConn(false);return;}
-  fit.fit();term.focus();nl();
+  show(tab,r);msg('ready');
+  if(tab===active){prompt(tab);try{tab.fit.fit()}catch(_){}tab.term.focus();}
 }
-async function api(cmd,timeout=55000){
-  const t0=Date.now();aborter=new AbortController();
-  try{
-    const res=await fetch('/api/exec',{method:'POST',headers:{'Content-Type':'application/json'},signal:aborter.signal,body:JSON.stringify({token:tokEl.value.trim(),command:cmd})});
-    $('stPing').textContent=((Date.now()-t0)/1000).toFixed(1)+'s';
-    if(res.status===401){term.writeln('\r\ntoken salah');setConn(false);return null;}
-    const j=await res.json();$('stExit').textContent=j.code;return j;
-  }catch(e){if(e.name==='AbortError'){term.writeln('^C');return null;}term.writeln('\r\nnetwork error: '+e.message);return null;}
-  finally{aborter=null;}
-}
-function show(j){
-  if(!j)return;
-  if(j.stdout)term.write('\r\n'+j.stdout.replace(/\n/g,'\r\n'));
-  if(j.stderr)term.write('\r\n\x1b[31m'+j.stderr.replace(/\n/g,'\r\n')+'\x1b[0m');
-  if(!j.ok)term.write('\r\n\x1b[31m[exit '+j.code+']\x1b[0m');
-}
-const withCwd=c=>'cd '+JSON.stringify(cwd)+' && '+c;
 async function run(cmd){
+  const tab=active;
   if(!connected){msg('connect dulu');return;}
-  if(busy){msg('tunggu…');return;}
-  term.write('\r\n\x1b[2m$ '+cmd+'\x1b[0m');busy=true;msg('running…');
-  const j=await api(withCwd(cmd));busy=false;
-  if(j&&connected)show(j);
-  if(connected){nl();msg('ready');}
+  if(!tab)return;
+  if(tab.busy){msg('tab sibuk — buka + TAB untuk paralel');return;}
+  tab.term.write('\r\n\x1b[2m$ '+cmd+'\x1b[0m');tab.busy=true;drawBar();msg('running…');
+  const j=await api(withCwd(tab,cmd),tab);tab.busy=false;
+  if(j)show(tab,j);
+  if(connected){prompt(tab);drawBar();msg('ready');}
 }
 function snip(c){run(c);}
 async function ping(){
-  if(!connected){msg('connect dulu');return;}
-  term.write('\r\n\x1b[2m$ keepalive\x1b[0m');
-  try{const t0=Date.now();const res=await fetch('/api/keepalive');$('stPing').textContent=((Date.now()-t0)/1000).toFixed(1)+'s';term.write('\r\n'+(await res.text()).slice(0,300).replace(/\n/g,'\r\n'));}
-  catch(e){term.write('\r\n\x1b[31m'+e.message+'\x1b[0m');}
-  if(connected)nl();
+  const tab=active;
+  if(!connected||!tab){msg('connect dulu');return;}
+  tab.term.write('\r\n\x1b[2m$ keepalive\x1b[0m');
+  try{const t0=Date.now();const res=await fetch('/api/keepalive');if(tab===active)$('stPing').textContent=((Date.now()-t0)/1000).toFixed(1)+'s';tab.term.write('\r\n'+(await res.text()).slice(0,300).replace(/\n/g,'\r\n'));}
+  catch(e){tab.term.write('\r\n\x1b[31m'+e.message+'\x1b[0m');}
+  prompt(tab);
 }
-const cur=()=>P().slice(2);
-term.onData(async d=>{
+function onKey(tab,d){
+  if(tab!==active)switchTab(tab.id);
   if(!connected)return;
-  if(busy){if(d==='\x03'&&aborter)aborter.abort();return;}
+  if(tab.busy){if(d==='\x03'&&tab.aborter)tab.aborter.abort();return;}
   switch(d){
     case '\r':{
-      term.write('\r\n');const cmd=buf;buf='';
-      if(cmd.trim()){hist.push(cmd);hi=hist.length;}
-      if(!cmd.trim()){nl();return;}
+      tab.term.write('\r\n');const cmd=tab.buf;tab.buf='';
+      if(cmd.trim()){tab.hist.push(cmd);tab.hi=tab.hist.length;}
+      if(!cmd.trim()){prompt(tab);return;}
       const t=cmd.trim();
-      if(t==='clear'){term.clear();nl();return;}
-      if(t==='exit'){term.writeln('pakai tombol CUT — ini bukan sesi permanen.');nl();return;}
-      busy=true;msg('running…');
-      if(/^cd(\s|$)/.test(t)){
-        const j=await api(withCwd(cmd)+' && pwd');busy=false;
-        if(j&&j.ok){cwd=j.stdout.trim().split('\n').pop();$('stCwd').textContent=short(cwd);}
-        if(connected){nl();msg('ready');}
-        return;
-      }
-      const j=await api(withCwd(cmd));busy=false;
-      if(j&&connected)show(j);
-      if(connected){nl();msg('ready');}
+      if(t==='clear'){tab.term.clear();prompt(tab);return;}
+      if(t==='exit'){tab.term.writeln('pakai CUT / × — ini bukan sesi permanen.');prompt(tab);return;}
+      tab.busy=true;drawBar();
+      (async()=>{
+        if(/^cd(\s|$)/.test(t)){
+          const j=await api(withCwd(tab,cmd)+' && pwd',tab);
+          if(j&&j.ok){tab.cwd=j.stdout.trim().split('\n').pop();}
+        }else{
+          const j=await api(withCwd(tab,cmd),tab);
+          if(j)show(tab,j);
+        }
+        tab.busy=false;
+        if(connected){prompt(tab);drawBar();}
+      })();
       return;}
-    case '\x7f':if(buf.length){buf=buf.slice(0,-1);term.write('\b \b');}return;
-    case '\x03':term.write('^C');nl();return;
-    case '\x0c':term.clear();nl();return;
+    case '\x7f':if(tab.buf.length){tab.buf=tab.buf.slice(0,-1);tab.term.write('\b \b');}return;
+    case '\x03':tab.term.write('^C');prompt(tab);return;
+    case '\x0c':tab.term.clear();prompt(tab);return;
     case '\x1b[A':
-      if(hist.length){if(hi<=0)hi=0;else if(hi===-1)hi=hist.length-1;else hi--;buf=hist[hi];term.write('\r\x1b[K'+cur()+buf);}
+      if(tab.hist.length){if(tab.hi<=0)tab.hi=0;else if(tab.hi===-1)tab.hi=tab.hist.length-1;else tab.hi--;tab.buf=tab.hist[tab.hi];tab.term.write('\r\x1b[K'+P(tab).slice(2)+tab.buf);}
       return;
     case '\x1b[B':
-      if(hi>=0&&hi<hist.length-1){hi++;buf=hist[hi];term.write('\r\x1b[K'+cur()+buf);}
-      else{hi=-1;buf='';term.write('\r\x1b[K'+cur());}
+      if(tab.hi>=0&&tab.hi<tab.hist.length-1){tab.hi++;tab.buf=tab.hist[tab.hi];tab.term.write('\r\x1b[K'+P(tab).slice(2)+tab.buf);}
+      else{tab.hi=-1;tab.buf='';tab.term.write('\r\x1b[K'+P(tab).slice(2));}
       return;
-    default:if(d>=' '&&d<='~'||d>'\x7f'){buf+=d;term.write(d);}
+    default:if(d>=' '&&d<='~'||d>'\x7f'){tab.buf+=d;tab.term.write(d);}
   }
-});
-let simpleMode=false;
-function toggleMode(){simpleMode=!simpleMode;$('term').style.display=simpleMode?'none':'block';$('simple').style.display=simpleMode?'flex':'none';$('btnMode').textContent=simpleMode?'TERM':'SIMPLE';if(!simpleMode){try{fit.fit()}catch(_){}term.focus();}}
+}
+function toggleMode(){
+  simpleMode=!simpleMode;
+  document.querySelectorAll('.pane').forEach(p=>p.style.visibility=simpleMode?'hidden':'visible');
+  $('simple').style.display=simpleMode?'flex':'none';
+  $('btnMode').textContent=simpleMode?'TERM':'SIMPLE';
+  if(!simpleMode&&active){try{active.fit.fit()}catch(_){}active.term.focus();}
+}
 async function sgo(){
-  const el=$('sin'),out=$('sout'),cmd=el.value.trim();
-  if(!cmd||!connected||busy){if(!connected)out.textContent+='\nconnect dulu';return;}
-  el.value='';out.textContent+='\n$ '+cmd+'\n…';busy=true;
-  const j=await api(withCwd(cmd));busy=false;
+  const el=$('sin'),out=$('sout'),tab=active,cmd=el.value.trim();
+  if(!cmd||!connected||!tab||tab.busy){if(!connected)out.textContent+='\nconnect dulu';return;}
+  el.value='';out.textContent+='\n[tab '+(tabs.indexOf(tab)+1)+'] $ '+cmd+'\n…';tab.busy=true;drawBar();
+  const j=await api(withCwd(tab,cmd),tab);tab.busy=false;drawBar();
   if(j)out.textContent+=(j.stdout?j.stdout+'\n':'')+(j.stderr?'ERR '+j.stderr+'\n':'')+(j.ok?'':'[exit '+j.code+']\n');
   out.scrollTop=out.scrollHeight;
 }
 $('sin').addEventListener('keydown',e=>{if(e.key==='Enter')sgo();});
 tokEl.addEventListener('keydown',e=>{if(e.key==='Enter')toggleConn();});
-term.writeln('lsd.segfault.net — ketik perintah, enter untuk eksekusi.');
-term.writeln('token tersimpan otomatis; connect otomatis saat dibuka ulang.');
-nl();
+addEventListener('resize',()=>{if(active&&!simpleMode){try{active.fit.fit()}catch(_){}}});
+newTab(true);
 if(tokEl.value.trim())connect();
 </script>
 </body>

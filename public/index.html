@@ -110,7 +110,7 @@ function api(cmd,tab,timeout=55000){
     .catch(e=>{if(e&&e.name==='AbortError'){tab.term.writeln('^C');return null;}tab.term.writeln('\r\nnetwork error: '+(e&&e.message||e));return null;})
     .finally(()=>{tab.aborter=null;});
 }
-const withCwd=(tab,c)=>'cd '+JSON.stringify(tab.cwd)+' && '+c;
+const withCwd=(tab,c)=>'export PATH="/sec/usr/bin:/sec/usr/local/bin:/sec/root/.local/bin:$PATH"; cd '+JSON.stringify(tab.cwd)+' && '+c;
 function show(tab,j){
   if(!j)return;
   if(j.stdout)tab.term.write('\r\n'+j.stdout.replace(/\n/g,'\r\n'));

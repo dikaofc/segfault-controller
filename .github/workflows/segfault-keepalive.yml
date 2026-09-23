@@ -81,11 +81,16 @@ jobs:
           EOS
           )
 
+          # Base64 agar quoting aman: payload mengandung single-quote yang
+          # akan memutus string SSH kalau dikirim mentah (remote shell = zsh).
+          PAYLOAD_B64="$(printf '%s' "$PAYLOAD" | base64 -w0)"
+          [ -n "$PAYLOAD_B64" ] || { echo "::error::payload kosong"; exit 1; }
+
           set +e
           sshpass -p segfault ssh \
             -o PreferredAuthentications=password -o PubkeyAuthentication=no \
             "${SSH_OPTS[@]}" "root@${SF_HOST}" \
-            "bash -lc '$PAYLOAD'; sleep ${HOLD_SECONDS}"
+            "echo ${PAYLOAD_B64} | base64 -d | bash -l; sleep ${HOLD_SECONDS}"
           rc=$?
           set -e
 

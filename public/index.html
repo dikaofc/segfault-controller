@@ -2,43 +2,224 @@
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>segfault controller</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>segfault VPS — terminal</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
 <style>
-body{background:#0b0e14;color:#e6edf3;font-family:monospace;max-width:760px;margin:24px auto;padding:0 16px}
-input,textarea{width:100%;background:#11161f;color:#e6edf3;border:1px solid #2a3342;border-radius:8px;padding:10px}
-button{background:#1f6feb;border:0;color:#fff;padding:10px 16px;border-radius:8px;cursor:pointer;margin:6px 6px 6px 0}
-pre{background:#11161f;border:1px solid #2a3342;border-radius:8px;padding:12px;white-space:pre-wrap;min-height:120px}
-.row{display:flex;gap:8px;flex-wrap:wrap}
+:root{--bg:#0b0e14;--panel:#11161f;--line:#232c3d;--txt:#e6edf3;--dim:#8b949e;--acc:#1f6feb;--ok:#3fb950;--err:#f85149}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--txt);font-family:ui-monospace,Menlo,Consolas,monospace;display:flex;flex-direction:column;height:100dvh}
+header{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.logo{font-weight:700;white-space:nowrap}
+.host{color:var(--dim);font-size:12px;white-space:nowrap}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--err);flex:none}
+.dot.on{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+header input{background:#0b0e14;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 10px;min-width:0;flex:1;max-width:280px}
+button{background:var(--acc);border:0;color:#fff;padding:7px 12px;border-radius:8px;cursor:pointer;font-family:inherit}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--txt)}
+button:disabled{opacity:.45;cursor:default}
+#tools{display:flex;gap:6px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto;flex:none}
+#tools button{white-space:nowrap;font-size:12px;padding:6px 10px}
+#wrap{flex:1;min-height:0;position:relative;background:#000}
+#term{position:absolute;inset:0;padding:6px}
+#simple{display:none;flex-direction:column;position:absolute;inset:0;background:#000;padding:10px;gap:8px}
+#simple pre{flex:1;margin:0;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;white-space:pre-wrap;font-size:13px}
+#simple .row{display:flex;gap:8px}
+#simple input{flex:1;background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:10px;font-family:inherit}
+footer{display:flex;gap:12px;padding:6px 12px;background:var(--panel);border-top:1px solid var(--line);font-size:12px;color:var(--dim);flex:none;overflow-x:auto;white-space:nowrap}
+footer b{color:var(--txt);font-weight:400}
 </style>
 </head>
 <body>
-<h3>segfault controller</h3>
-<input id="token" type="password" placeholder="CONTROLLER_TOKEN">
-<br><br>
-<textarea id="cmd" rows="3">uptime; df -h /sec | tail -1; tmux ls 2>&1 | head -3; curl -s -m 3 -o /dev/null http://127.0.0.1:20128/v1/models && echo 9Router:HIDUP || echo 9Router:MATI; pgrep -f "hermes gateway" >/dev/null && echo gateway:HIDUP || echo gateway:MATI</textarea>
-<br><br>
-<div class="row">
-<button onclick="go()">jalankan</button>
-<button onclick="quick('/sec/root/segfault/up.sh')">pulihkan stack</button>
-<button onclick="quick('tmux ls; echo ---; tail -20 /sec/root/.hermes/gateway-logs/up-trigger.log 2>/dev/null')">cek log</button>
-<button onclick="ping()">tes keepalive</button>
+<header>
+  <span class="dot" id="dot"></span>
+  <span class="logo">⚡ segfault VPS</span>
+  <span class="host">root@lsd.segfault.net</span>
+  <input id="token" type="password" placeholder="CONTROLLER_TOKEN" autocomplete="off">
+  <button id="btnConn" onclick="toggleConn()">Connect</button>
+  <button class="ghost" onclick="toggleMode()" id="btnMode">Simple mode</button>
+</header>
+<div id="tools">
+  <button class="ghost" onclick="snip('uptime; echo ---; df -h /sec | tail -1; echo ---; free -m | head -2')">🖥 status</button>
+  <button class="ghost" onclick="snip('top -b -n1 | head -20')">📊 top</button>
+  <button class="ghost" onclick="snip('tmux ls 2>&1; echo ---; ps -o pid,etime,cmd -p $(pgrep -f \"opencode.*serve\" | head -1) 2>&1 | tail -1')">🔗 sesi</button>
+  <button class="ghost" onclick="snip('curl -s -m 3 -o /dev/null http://127.0.0.1:20128/v1/models && echo 9Router:HIDUP || echo 9Router:MATI; pgrep -f \"hermes gateway\" >/dev/null && echo gateway:HIDUP || echo gateway:MATI')">🤖 service</button>
+  <button class="ghost" onclick="snip('tail -30 /sec/root/.hermes/gateway-logs/up-trigger.log 2>/dev/null || tail -30 /sec/root/.hermes/gateway-logs/up.log 2>/dev/null; echo ---; tail -10 /sec/root/.9router/server.log 2>/dev/null')">📜 log</button>
+  <button class="ghost" onclick="snip('/sec/root/segfault/up.sh')">🚀 pulihkan stack</button>
+  <button class="ghost" onclick="ping()">🏓 keepalive</button>
 </div>
-<pre id="out">siap.</pre>
+<div id="wrap">
+  <div id="term"></div>
+  <div id="simple">
+    <pre id="sout">simple mode — ketik perintah di bawah, Enter untuk jalan.</pre>
+    <div class="row"><input id="sin" placeholder="ls -la" autocomplete="off"><button onclick="sgo()">▶</button></div>
+  </div>
+</div>
+<footer>
+  <span>cwd <b id="stCwd">~</b></span>
+  <span>exit <b id="stExit">-</b></span>
+  <span>ping <b id="stPing">-</b></span>
+  <span id="stMsg">isi token lalu Connect</span>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.7.0/lib/xterm-addon-fit.js"></script>
 <script>
-const out = document.getElementById('out');
-async function go(){
-  out.textContent = 'jalan...';
-  const r = await fetch('/api/exec',{method:'POST',headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({token: document.getElementById('token').value, command: document.getElementById('cmd').value})});
-  out.textContent = await r.text();
+const $ = id => document.getElementById(id);
+const term = new Terminal({cursorBlink:true,fontSize:14,theme:{background:'#000000',foreground:'#e6edf3',cursor:'#1f6feb',selectionBackground:'#264f78'}});
+const fit = new FitAddon.FitAddon();
+term.loadAddon(fit);
+term.open($('term'));
+fit.fit();
+addEventListener('resize',()=>{try{fit.fit()}catch(_){}});
+
+let connected=false, busy=false, cwd='/sec/root', hist=[], hi=-1, buf='', aborter=null;
+const tokEl=$('token');
+tokEl.value=localStorage.getItem('sf_token')||'';
+const short = p => p.replace(/^\/sec\/root/,'~');
+const prompt = () => `\r\n\x1b[1;32mroot@lsd\x1b[0m:\x1b[1;34m${short(cwd)}\x1b[0m# `;
+const msg = t => $('stMsg').textContent=t;
+
+function setConn(on){
+  connected=on;
+  $('dot').classList.toggle('on',on);
+  $('btnConn').textContent=on?'Disconnect':'Connect';
+  tokEl.disabled=on;
 }
-async function quick(c){ document.getElementById('cmd').value = c; go(); }
+function toggleConn(){ connected?disconnect():connect(); }
+function disconnect(){
+  if(busy&&aborter)aborter.abort();
+  setConn(false);msg('terputus — sesi SSH serverless, bukan sesi permanen');
+  term.writeln('\r\n\x1b[33m[disconnected]\x1b[0m');
+}
+async function connect(){
+  const t=tokEl.value.trim();
+  if(!t){msg('isi CONTROLLER_TOKEN dulu');tokEl.focus();return;}
+  localStorage.setItem('sf_token',t);
+  setConn(true);msg('menghubungkan…');
+  term.writeln('\x1b[36m[connecting root@lsd.segfault.net …]\x1b[0m');
+  const r=await api('uname -sr; uptime; df -h /sec | tail -1; tmux ls 2>&1 | head -3');
+  if(r===null){setConn(false);return;}
+  fit.fit();term.focus();
+  newline();
+}
+async function api(cmd,timeout=55000){
+  const t0=Date.now();
+  aborter=new AbortController();
+  try{
+    const res=await fetch('/api/exec',{method:'POST',headers:{'Content-Type':'application/json'},
+      signal:aborter.signal,body:JSON.stringify({token:tokEl.value.trim(),command:cmd})});
+    const dt=((Date.now()-t0)/1000).toFixed(1)+'s';
+    $('stPing').textContent=dt;
+    if(res.status===401){term.writeln('\r\n\x1b[31mtoken salah\x1b[0m');setConn(false);return null;}
+    const j=await res.json();
+    $('stExit').textContent=j.code;
+    return j;
+  }catch(e){
+    if(e.name==='AbortError'){term.writeln('^C');return null;}
+    term.writeln(`\r\n\x1b[31mnetwork error: ${e.message}\x1b[0m`);return null;
+  }finally{aborter=null;}
+}
+function show(j){
+  if(!j)return;
+  if(j.stdout)term.write('\r\n'+j.stdout.replace(/\n/g,'\r\n'));
+  if(j.stderr)term.write('\r\n\x1b[31m'+j.stderr.replace(/\n/g,'\r\n')+'\x1b[0m');
+  if(!j.ok)term.write(`\r\n\x1b[31m[exit ${j.code}]\x1b[0m`);
+}
+const withCwd = c => `cd ${JSON.stringify(cwd)} && ${c}`;
+async function run(cmd,{echo=true}={}){
+  if(!connected){msg('klik Connect dulu');return;}
+  if(busy){msg('tunggu perintah sebelumnya…');return;}
+  if(echo)term.write('\r\n\x1b[2m$ '+cmd+'\x1b[0m');
+  busy=true;msg('menjalankan…');
+  const j=await api(withCwd(cmd));
+  busy=false;
+  if(j&&connected){show(j);newline();}
+  else if(connected){newline();}
+  msg(connected?'siap':'');
+}
+function newline(){term.write(prompt());buf='';}
+function snip(c){run(c);}
 async function ping(){
-  out.textContent = 'ping keepalive...';
-  const r = await fetch('/api/keepalive');
-  out.textContent = await r.text();
+  if(!connected){msg('klik Connect dulu');return;}
+  term.write('\r\n\x1b[2m$ ping keepalive\x1b[0m');
+  try{
+    const t0=Date.now();
+    const res=await fetch('/api/keepalive');
+    $('stPing').textContent=((Date.now()-t0)/1000).toFixed(1)+'s';
+    term.write('\r\n'+(await res.text()).slice(0,300).replace(/\n/g,'\r\n'));
+  }catch(e){term.write('\r\n\x1b[31m'+e.message+'\x1b[0m');}
+  if(connected)newline();
 }
+term.onData(async d=>{
+  if(!connected)return;
+  if(busy){if(d==='\x03'&&aborter)aborter.abort();return;}
+  switch(d){
+    case '\r':
+      term.write('\r\n');
+      const cmd=buf;buf='';
+      if(cmd.trim()){hist.push(cmd);hi=hist.length;}
+      if(!cmd.trim()){newline();return;}
+      if(cmd.trim()==='clear'){term.clear();newline();return;}
+      if(cmd.trim()==='exit'){term.writeln('\x1b[33mGunakan tombol Disconnect — ini bukan sesi permanen.\x1b[0m');newline();return;}
+      if(/^cd(\s|$)/.test(cmd.trim())){
+        busy=true;
+        const j=await api(withCwd(cmd)+' && pwd');
+        busy=false;
+        if(j&&j.ok){cwd=j.stdout.trim().split('\n').pop();}
+        if(j)show({...j,stdout:''});
+        if(connected){$('stCwd').textContent=short(cwd);newline();}
+        return;
+      }
+      busy=true;msg('menjalankan…');
+      const j=await api(withCwd(cmd));
+      busy=false;
+      if(j&&connected)show(j);
+      if(connected){newline();msg('siap');}
+      return;
+    case '\x7f':
+      if(buf.length){buf=buf.slice(0,-1);term.write('\b \b');}
+      return;
+    case '\x03': term.write('^C');newline();return;
+    case '\x0c': term.clear();newline();return;
+    case '\x1b[A':
+      if(hi>0){hi--;buf=hist[hi];term.write('\r\x1b[K'+prompt().slice(2)+buf);}
+      else if(hist.length&&hi===-1){hi=hist.length-1;buf=hist[hi];term.write('\r\x1b[K'+prompt().slice(2)+buf);}
+      return;
+    case '\x1b[B':
+      if(hi>=0&&hi<hist.length-1){hi++;buf=hist[hi];term.write('\r\x1b[K'+prompt().slice(2)+buf);}
+      else{hi=-1;buf='';term.write('\r\x1b[K'+prompt().slice(2));}
+      return;
+    default:
+      if(d>=' '&&d<='~'||d>'\x7f'){buf+=d;term.write(d);}
+  }
+});
+setInterval(()=>{if(connected)$('stCwd').textContent=short(cwd);},1000);
+// ---- simple mode (ramah keyboard HP) ----
+let simpleMode=false;
+function toggleMode(){
+  simpleMode=!simpleMode;
+  $('term').style.display=simpleMode?'none':'block';
+  $('simple').style.display=simpleMode?'flex':'none';
+  $('btnMode').textContent=simpleMode?'Terminal mode':'Simple mode';
+  if(!simpleMode){try{fit.fit()}catch(_){}term.focus();}
+}
+async function sgo(){
+  const el=$('sin'),out=$('sout'),cmd=el.value.trim();
+  if(!cmd)return;
+  if(!connected){out.textContent+='\nklik Connect dulu';return;}
+  if(busy){out.textContent+='\ntunggu…';return;}
+  el.value='';out.textContent+=`\n$ ${cmd}\n…`;
+  busy=true;
+  const j=await api(withCwd(cmd));
+  busy=false;
+  if(j){out.textContent+=(j.stdout?j.stdout+'\n':'')+(j.stderr?'ERR: '+j.stderr+'\n':'')+(j.ok?'':`[exit ${j.code}]\n`);}
+  out.scrollTop=out.scrollHeight;
+}
+$('sin').addEventListener('keydown',e=>{if(e.key==='Enter')sgo();});
+term.writeln('\x1b[1;36msegfault VPS — terminal\x1b[0m');
+term.writeln('\x1b[2mIsi CONTROLLER_TOKEN lalu Connect. Tiap Enter = 1 request SSH (bukan shell permanen). cd persisten, ↑↓ riwayat, Ctrl+C batalkan.\x1b[0m');
+newline();
 </script>
 </body>
 </html>

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/keepalive.js": { "maxDuration": 60 },
+    "api/exec.js": { "maxDuration": 60 }
+  },
+  "crons": [
+    { "path": "/api/keepalive", "schedule": "0 0 * * *" }
+  ]
+}
